@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -31,16 +30,7 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/login", gin.WrapF(handler.Login()))
-	r.GET("/callback", gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
-		userInfo, err := handler.HandleCallback(w, r)
-		if err != nil {
-			http.Error(w, "Login failed: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(userInfo)
-	}))
+	r.GET("/callback", gin.WrapF(handler.HandleCallback()))
 	r.GET("/logout", gin.WrapF(handler.LogOut()))
 
 	log.Println("Server starting on :8080")

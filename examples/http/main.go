@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -29,16 +28,7 @@ func main() {
 	handler := tumoidc.NewHTTPHandler(oidcClient, store)
 
 	http.HandleFunc("/login", handler.Login())
-	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		userInfo, err := handler.HandleCallback(w, r)
-		if err != nil {
-			http.Error(w, "Login failed: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(userInfo)
-	})
+	http.HandleFunc("/callback", handler.HandleCallback())
 	http.HandleFunc("/logout", handler.LogOut())
 
 	log.Println("Server starting on :8080")
