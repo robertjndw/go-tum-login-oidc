@@ -13,9 +13,10 @@ const (
 )
 
 type HTTPHandler struct {
-	OIDCClient   *TUMOIDC
-	SessionStore sessions.Store
-	SessionName  string // Name of the session cookie
+	OIDCClient      *TUMOIDC
+	SessionStore    sessions.Store
+	SessionName     string // Name of the session cookie
+	onAuthenticated func(*UserInfo) error
 }
 
 // NewHTTPHandler creates a new HTTPHandler with the given session store
@@ -25,6 +26,13 @@ func NewHTTPHandler(oidcClient *TUMOIDC, store sessions.Store) *HTTPHandler {
 		SessionStore: store,
 		SessionName:  defaultSessionKey,
 	}
+}
+
+func (h *HTTPHandler) WithOnAuthenticated(fn func(*UserInfo) error) *HTTPHandler {
+	// Create a new handler instance to avoid modifying the original
+	newHandler := *h
+	newHandler.onAuthenticated = fn
+	return &newHandler
 }
 
 func (h *HTTPHandler) RegisterDefaultRoutes(mux *http.ServeMux) {
@@ -160,6 +168,14 @@ func (h *HTTPHandler) HandleCallback() http.HandlerFunc {
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
 			return
+		}
+
+		// Call authentication callback if set
+		if h.onAuthenticated != nil {
+			if err := h.onAuthenticated(userInfo); err != nil {
+				handleError(w, r, fmt.Errorf("authentication callback failed: %w", err))
+				return
+			}
 		}
 
 		session.Values["user"] = userInfo

@@ -29,6 +29,11 @@ func main() {
 
 	http.HandleFunc("/login", handler.Login())
 	http.HandleFunc("/callback", handler.HandleCallback())
+	// More advanced with user information processing
+	// http.HandleFunc("/callback", handler.WithOnAuthenticated(func(user *tumoidc.UserInfo) error {
+	// 	// Do something with the user information
+	// 	return nil
+	// }).HandleCallback())
 	http.HandleFunc("/logout", handler.LogOut())
 
 	log.Println("Server starting on :8080")
