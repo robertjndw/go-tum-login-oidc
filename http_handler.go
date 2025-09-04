@@ -32,7 +32,7 @@ func (h *HTTPHandler) WithOnAuthenticated(fn func(*UserInfo) error) *HTTPHandler
 func (h *HTTPHandler) RegisterDefaultRoutes(mux *http.ServeMux) {
 	mux.Handle("/login", h.Login())
 	mux.Handle("/callback", h.HandleCallback())
-	mux.Handle("/logout", h.LogOut())
+	mux.Handle("/logout", h.Logout())
 }
 
 func (h *HTTPHandler) loadAndSaveSession(f http.HandlerFunc) http.Handler {
@@ -182,7 +182,7 @@ func (h *HTTPHandler) HandleCallback() http.Handler {
 	})
 }
 
-func (h *HTTPHandler) LogOut() http.Handler {
+func (h *HTTPHandler) Logout() http.Handler {
 	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
 		h.SessionManager.Destroy(r.Context())
 	})

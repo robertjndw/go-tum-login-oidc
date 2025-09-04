@@ -27,7 +27,7 @@ func main() {
 	r := gin.Default()
 	r.GET("/login", gin.WrapH(handler.Login()))
 	r.GET("/callback", gin.WrapH(handler.HandleCallback()))
-	r.GET("/logout", gin.WrapH(handler.LogOut()))
+	r.GET("/logout", gin.WrapH(handler.Logout()))
 
 	log.Println("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", r))

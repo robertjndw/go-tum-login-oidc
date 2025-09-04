@@ -36,7 +36,7 @@ func main() {
 		fmt.Println("User authenticated:", user)
 		return nil
 	}).HandleCallback())
-	http.Handle("/logout", handler.LogOut())
+	http.Handle("/logout", handler.Logout())
 
 	log.Println("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
