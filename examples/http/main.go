@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 
-	"github.com/gorilla/sessions"
 	tumoidc "github.com/robertjndw/go-tum-login-oidc"
 )
 
@@ -21,20 +22,21 @@ func main() {
 		log.Fatal("Failed to create OIDC client:", err)
 	}
 
-	// Setup session store
-	store := sessions.NewCookieStore([]byte(os.Getenv("SESSION_SECRET")))
-
 	// Create HTTP handler
-	handler := tumoidc.NewHTTPHandler(oidcClient, store)
-
-	http.HandleFunc("/login", handler.Login())
-	http.HandleFunc("/callback", handler.HandleCallback())
+	handler := tumoidc.NewHTTPHandler(oidcClient)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode("Hello World")
+	})
+	http.Handle("/login", handler.Login())
+	// http.Handle("/callback", handler.HandleCallback())
 	// More advanced with user information processing
-	// http.HandleFunc("/callback", handler.WithOnAuthenticated(func(user *tumoidc.UserInfo) error {
-	// 	// Do something with the user information
-	// 	return nil
-	// }).HandleCallback())
-	http.HandleFunc("/logout", handler.LogOut())
+	http.Handle("/callback", handler.WithOnAuthenticated(func(user *tumoidc.UserInfo) error {
+		// Do something with the user information
+		fmt.Println("User authenticated:", user)
+		return nil
+	}).HandleCallback())
+	http.Handle("/logout", handler.LogOut())
 
 	log.Println("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

@@ -5,26 +5,20 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/gorilla/sessions"
-)
-
-const (
-	defaultSessionKey = "oidc-session"
+	"github.com/alexedwards/scs/v2"
 )
 
 type HTTPHandler struct {
 	OIDCClient      *TUMOIDC
-	SessionStore    sessions.Store
-	SessionName     string // Name of the session cookie
+	SessionManager  *scs.SessionManager
 	onAuthenticated func(*UserInfo) error
 }
 
 // NewHTTPHandler creates a new HTTPHandler with the given session store
-func NewHTTPHandler(oidcClient *TUMOIDC, store sessions.Store) *HTTPHandler {
+func NewHTTPHandler(oidcClient *TUMOIDC) *HTTPHandler {
 	return &HTTPHandler{
-		OIDCClient:   oidcClient,
-		SessionStore: store,
-		SessionName:  defaultSessionKey,
+		OIDCClient:     oidcClient,
+		SessionManager: scs.New(),
 	}
 }
 
@@ -36,19 +30,18 @@ func (h *HTTPHandler) WithOnAuthenticated(fn func(*UserInfo) error) *HTTPHandler
 }
 
 func (h *HTTPHandler) RegisterDefaultRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/login", h.Login())
-	mux.HandleFunc("/callback", h.HandleCallback())
-	mux.HandleFunc("/logout", h.LogOut())
+	mux.Handle("/login", h.Login())
+	mux.Handle("/callback", h.HandleCallback())
+	mux.Handle("/logout", h.LogOut())
 }
 
-func (h *HTTPHandler) Login() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Get session for this specific request
-		session, err := h.SessionStore.Get(r, h.SessionName)
-		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to get session: %w", err))
-			return
-		}
+func (h *HTTPHandler) loadAndSaveSession(f http.HandlerFunc) http.Handler {
+	return h.SessionManager.LoadAndSave(http.HandlerFunc(f))
+}
+
+func (h *HTTPHandler) Login() http.Handler {
+	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		// Store return URL from query parameter if provided
 		returnURL := r.URL.Query().Get("return_url")
 		if returnURL != "" {
@@ -64,7 +57,7 @@ func (h *HTTPHandler) Login() http.HandlerFunc {
 				returnURL = "" // Reset for invalid URLs
 			}
 			if returnURL != "" {
-				session.Values["return_url"] = returnURL
+				h.SessionManager.Put(ctx, "return_url", returnURL)
 			}
 		}
 
@@ -76,31 +69,24 @@ func (h *HTTPHandler) Login() http.HandlerFunc {
 		}
 
 		// Store PKCE data in session
-		session.Values["code_verifier"] = pkce.CodeVerifier
-		session.Values["state"] = pkce.State
+		h.SessionManager.Put(ctx, "code_verifier", pkce.CodeVerifier)
+		h.SessionManager.Put(ctx, "state", pkce.State)
 
-		// Persist session data with error checking
-		if err := session.Save(r, w); err != nil {
-			handleError(w, r, fmt.Errorf("failed to save session: %w", err))
+		nonce, err := generateRandomString(32)
+		if err != nil {
+			handleError(w, r, fmt.Errorf("failed to generate nonce: %w", err))
 			return
 		}
+		h.SessionManager.Put(ctx, "nonce", nonce)
 
-		authURL := h.OIDCClient.AuthCodeURL(pkce.State, pkce.CodeChallenge)
+		authURL := h.OIDCClient.AuthCodeURL(pkce.State, pkce.CodeChallenge, nonce)
 		http.Redirect(w, r, authURL, http.StatusFound)
-	}
+	})
 }
 
-func (h *HTTPHandler) HandleCallback() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (h *HTTPHandler) HandleCallback() http.Handler {
+	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-
-		// Get session for this specific request
-		session, err := h.SessionStore.Get(r, h.SessionName)
-		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to get session: %w", err))
-			return
-		}
-		// OR: session := h.SessionStore.Get(r, h.SessionName)
 
 		// Check for error in callback
 		if errMsg := r.URL.Query().Get("error"); errMsg != "" {
@@ -120,30 +106,28 @@ func (h *HTTPHandler) HandleCallback() http.HandlerFunc {
 		}
 
 		// Verify state
-		storedState := session.Values["state"]
-		if storedState == nil {
-			handleError(w, r, fmt.Errorf("failed to get stored state: %w", err))
-			return
-		}
-		if storedState != state {
+		storedState := h.SessionManager.PopString(ctx, "state")
+		if storedState == "" || storedState != state {
 			handleError(w, r, fmt.Errorf("invalid state parameter"))
 			return
 		}
 
 		// Get code verifier
-		codeVerifierRaw := session.Values["code_verifier"]
-		if codeVerifierRaw == nil {
-			handleError(w, r, fmt.Errorf("failed to get code verifier"))
-			return
-		}
-		codeVerifier, ok := codeVerifierRaw.(string)
-		if !ok {
+		codeVerifier := h.SessionManager.PopString(ctx, "code_verifier")
+		if codeVerifier == "" {
 			handleError(w, r, fmt.Errorf("invalid code verifier in session"))
 			return
 		}
 
+		// Get Nonce
+		nonceStr := h.SessionManager.PopString(ctx, "nonce")
+		if nonceStr == "" {
+			handleError(w, r, fmt.Errorf("invalid nonce in session"))
+			return
+		}
+
 		// Exchange code for token using PKCE
-		token, err := h.OIDCClient.ExchangeCode(ctx, code, codeVerifier)
+		token, err := h.OIDCClient.ExchangeCode(ctx, code, codeVerifier, nonceStr)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to exchange code for token: %w", err))
 			return
@@ -157,14 +141,20 @@ func (h *HTTPHandler) HandleCallback() http.HandlerFunc {
 		}
 
 		// Verify ID token
-		idToken, err := h.OIDCClient.VerifyIDToken(ctx, rawIDToken)
+		_, err = h.OIDCClient.VerifyIDToken(ctx, rawIDToken)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to verify ID token: %w", err))
 			return
 		}
 
 		// Extract user information
-		userInfo, err := ExtractUserInfo(idToken)
+		oidc_userInfo, err := h.OIDCClient.UserInfo(ctx, token)
+		if err != nil {
+			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
+			return
+		}
+
+		userInfo, err := ExtractUserInfo(oidc_userInfo)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
 			return
@@ -178,82 +168,24 @@ func (h *HTTPHandler) HandleCallback() http.HandlerFunc {
 			}
 		}
 
-		session.Values["user"] = userInfo
-
 		// Get return URL before cleaning up session data
-		returnURL, _ := session.Values["return_url"].(string)
+		returnURL := h.SessionManager.PopString(ctx, "return_url")
 		if returnURL == "" {
 			returnURL = "/"
 		}
 
-		// Clean up temporary session data
-		delete(session.Values, "code_verifier")
-		delete(session.Values, "state")
-		delete(session.Values, "return_url")
+		h.SessionManager.Put(ctx, "user", *userInfo)
 
-		session.Save(r, w)
+		fmt.Printf("User %s authenticated successfully\n", userInfo.Sub)
 
-		// Add user to request context for easy access in handlers
-		ctx = NewContextWithUser(ctx, userInfo)
-		http.Redirect(w, r.WithContext(ctx), returnURL, http.StatusFound)
-	}
+		http.Redirect(w, r, returnURL, http.StatusFound)
+	})
 }
 
-func (h *HTTPHandler) LogOut() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Get session for this specific request
-		session, err := h.SessionStore.Get(r, h.SessionName)
-		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to get session: %w", err))
-			return
-		}
-
-		for key := range session.Values {
-			delete(session.Values, key)
-		}
-		session.Save(r, w)
-	}
-}
-
-// RequireAuth is a middleware that requires authentication
-func (h *HTTPHandler) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return h.RequireRoles(next)
-}
-
-// RequireRoles is a middleware that checks for required roles
-func (h *HTTPHandler) RequireRoles(next http.HandlerFunc, requiredRoles ...string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		return_url := r.URL.String()
-		// Get session for this specific request
-		session, err := h.SessionStore.Get(r, h.SessionName)
-		if err != nil {
-			q := r.URL.Query()
-			q.Set("return_url", return_url)
-			r.URL.RawQuery = q.Encode()
-			h.Login()(w, r)
-			return
-		}
-
-		user, ok := session.Values["user"].(UserInfo)
-		if !ok || user.Sub == "" {
-			// User is not authenticated, redirect to login
-			q := r.URL.Query()
-			q.Set("return_url", return_url)
-			r.URL.RawQuery = q.Encode()
-			h.Login()(w, r)
-			return
-		}
-
-		// Check for required roles if they are specified
-		if len(requiredRoles) > 0 && !user.HasRequiredRole(requiredRoles...) {
-			http.Error(w, "Forbidden: insufficient permissions", http.StatusForbidden)
-			return
-		}
-
-		// Add user to request context for easy access in handlers
-		ctx := NewContextWithUser(r.Context(), &user)
-		next(w, r.WithContext(ctx))
-	}
+func (h *HTTPHandler) LogOut() http.Handler {
+	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
+		h.SessionManager.Destroy(r.Context())
+	})
 }
 
 func handleError(w http.ResponseWriter, r *http.Request, err error) {

@@ -3,7 +3,6 @@ package tumoidc
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 
@@ -12,7 +11,7 @@ import (
 )
 
 const (
-	tumLiveLogin = "https://login.tum.de"
+	tumLiveLogin = "https://tumidp.lrz.de/idp/shibboleth"
 )
 
 type TUMOIDC struct {
@@ -54,16 +53,17 @@ func New(ctx context.Context, opts Options) (*TUMOIDC, error) {
 	}, nil
 }
 
-func (t *TUMOIDC) AuthCodeURL(state, codeChallenge string) string {
+func (t *TUMOIDC) AuthCodeURL(state, codeChallenge, nonce string) string {
 	return t.oauth2.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+		oidc.Nonce(nonce),
 	)
 }
 
 // ExchangeCode exchanges the authorization code for tokens using PKCE
-func (t *TUMOIDC) ExchangeCode(ctx context.Context, code, codeVerifier string) (*oauth2.Token, error) {
-	token, err := t.oauth2.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
+func (t *TUMOIDC) ExchangeCode(ctx context.Context, code, codeVerifier, nonce string) (*oauth2.Token, error) {
+	token, err := t.oauth2.Exchange(ctx, code, oauth2.VerifierOption(codeVerifier), oidc.Nonce(nonce))
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}
@@ -79,6 +79,14 @@ func (t *TUMOIDC) VerifyIDToken(ctx context.Context, rawIDToken string) (*oidc.I
 	return idToken, nil
 }
 
+func (t *TUMOIDC) UserInfo(ctx context.Context, token *oauth2.Token) (*oidc.UserInfo, error) {
+	userInfo, err := t.provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get userinfo: %w", err)
+	}
+	return userInfo, nil
+}
+
 // PKCEData holds PKCE challenge and verifier
 type PKCEData struct {
 	CodeVerifier  string
@@ -89,17 +97,13 @@ type PKCEData struct {
 // GeneratePKCE generates PKCE code verifier and challenge
 func (t *TUMOIDC) GeneratePKCE() (*PKCEData, error) {
 	// Generate code verifier
-	codeVerifier, err := generateRandomString()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate code verifier: %w", err)
-	}
+	codeVerifier := oauth2.GenerateVerifier()
 
 	// Generate code challenge using S256 method
-	h := sha256.Sum256([]byte(codeVerifier[:128]))
-	codeChallenge := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(h[:])
+	codeChallenge := oauth2.S256ChallengeFromVerifier(codeVerifier)
 
 	// Generate state
-	state, err := generateRandomString()
+	state, err := generateRandomString(32)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate state: %w", err)
 	}
@@ -111,11 +115,11 @@ func (t *TUMOIDC) GeneratePKCE() (*PKCEData, error) {
 	}, nil
 }
 
-func generateRandomString() (string, error) {
-	b := make([]byte, 32)
+func generateRandomString(length int) (string, error) {
+	b := make([]byte, length)
 	_, err := rand.Read(b)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate state: %w", err)
 	}
-	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b), nil
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
