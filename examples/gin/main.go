@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -26,7 +27,11 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/login", gin.WrapH(handler.Login()))
-	r.GET("/callback", gin.WrapH(handler.HandleCallback()))
+	r.GET("/callback", gin.WrapH(handler.HandleCallback(func(user *tumoidc.UserInfo) error {
+		// Do something with the user information
+		fmt.Println("User authenticated:", user)
+		return nil
+	})))
 	r.GET("/logout", gin.WrapH(handler.Logout()))
 
 	log.Println("Server starting on :8080")

@@ -3,15 +3,13 @@ package tumoidc
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/alexedwards/scs/v2"
 )
 
 type HTTPHandler struct {
-	OIDCClient      *TUMOIDC
-	SessionManager  *scs.SessionManager
-	onAuthenticated func(*UserInfo) error
+	OIDCClient     *TUMOIDC
+	SessionManager *scs.SessionManager
 }
 
 // NewHTTPHandler creates a new HTTPHandler with the given session store
@@ -22,16 +20,13 @@ func NewHTTPHandler(oidcClient *TUMOIDC) *HTTPHandler {
 	}
 }
 
-func (h *HTTPHandler) WithOnAuthenticated(fn func(*UserInfo) error) *HTTPHandler {
-	// Create a new handler instance to avoid modifying the original
-	newHandler := *h
-	newHandler.onAuthenticated = fn
-	return &newHandler
-}
-
 func (h *HTTPHandler) RegisterDefaultRoutes(mux *http.ServeMux) {
 	mux.Handle("/login", h.Login())
-	mux.Handle("/callback", h.HandleCallback())
+	mux.Handle("/callback", h.HandleCallback(func(ui *UserInfo) error {
+		// Default behavior: just log the user info
+		fmt.Printf("User %s authenticated successfully\n", ui.Sub)
+		return nil
+	}))
 	mux.Handle("/logout", h.Logout())
 }
 
@@ -42,24 +37,6 @@ func (h *HTTPHandler) loadAndSaveSession(f http.HandlerFunc) http.Handler {
 func (h *HTTPHandler) Login() http.Handler {
 	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		// Store return URL from query parameter if provided
-		returnURL := r.URL.Query().Get("return_url")
-		if returnURL != "" {
-			// Validate and sanitize return URL
-			if parsedURL, err := url.Parse(returnURL); err == nil {
-				// Only allow relative URLs or same-origin URLs for security
-				if parsedURL.IsAbs() {
-					if parsedURL.Host != r.Host {
-						returnURL = "" // Reset for external URLs
-					}
-				}
-			} else {
-				returnURL = "" // Reset for invalid URLs
-			}
-			if returnURL != "" {
-				h.SessionManager.Put(ctx, "return_url", returnURL)
-			}
-		}
 
 		// Generate PKCE parameters
 		pkce, err := h.OIDCClient.GeneratePKCE()
@@ -84,7 +61,7 @@ func (h *HTTPHandler) Login() http.Handler {
 	})
 }
 
-func (h *HTTPHandler) HandleCallback() http.Handler {
+func (h *HTTPHandler) HandleCallback(fn func(*UserInfo) error) http.Handler {
 	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -161,24 +138,11 @@ func (h *HTTPHandler) HandleCallback() http.Handler {
 		}
 
 		// Call authentication callback if set
-		if h.onAuthenticated != nil {
-			if err := h.onAuthenticated(userInfo); err != nil {
-				handleError(w, r, fmt.Errorf("authentication callback failed: %w", err))
-				return
-			}
+		err = fn(userInfo)
+		if err != nil {
+			handleError(w, r, fmt.Errorf("authentication callback failed: %w", err))
+			return
 		}
-
-		// Get return URL before cleaning up session data
-		returnURL := h.SessionManager.PopString(ctx, "return_url")
-		if returnURL == "" {
-			returnURL = "/"
-		}
-
-		h.SessionManager.Put(ctx, "user", *userInfo)
-
-		fmt.Printf("User %s authenticated successfully\n", userInfo.Sub)
-
-		http.Redirect(w, r, returnURL, http.StatusFound)
 	})
 }
 

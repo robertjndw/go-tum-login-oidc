@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,18 +23,14 @@ func main() {
 
 	// Create HTTP handler
 	handler := tumoidc.NewHTTPHandler(oidcClient)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode("Hello World")
-	})
 	http.Handle("/login", handler.Login())
 	// http.Handle("/callback", handler.HandleCallback())
 	// More advanced with user information processing
-	http.Handle("/callback", handler.WithOnAuthenticated(func(user *tumoidc.UserInfo) error {
+	http.Handle("/callback", handler.HandleCallback(func(user *tumoidc.UserInfo) error {
 		// Do something with the user information
 		fmt.Println("User authenticated:", user)
 		return nil
-	}).HandleCallback())
+	}))
 	http.Handle("/logout", handler.Logout())
 
 	log.Println("Server starting on :8080")
