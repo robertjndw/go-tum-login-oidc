@@ -13,9 +13,10 @@ import (
 func main() {
 	// Initialize OIDC client
 	oidcClient, err := tumoidc.New(context.Background(), tumoidc.Options{
-		ClientID:    os.Getenv("TUM_CLIENT_ID"),
-		RedirectURL: "http://localhost:8080/callback",
-		Scopes:      []string{"profile", "email"},
+		ClientID:     os.Getenv("TUM_CLIENT_ID"),
+		ClientSecret: os.Getenv("TUM_CLIENT_SECRET"),
+		RedirectURL:  "http://localhost:8080/callback",
+		Scopes:       []string{"profile", "email"},
 	})
 	if err != nil {
 		log.Fatal("Failed to create OIDC client:", err)

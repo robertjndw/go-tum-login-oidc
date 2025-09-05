@@ -107,14 +107,6 @@ type Options struct {
 }
 ```
 
-### Environment Variables
-Set your TUM OIDC client credentials:
-
-```bash
-export TUM_CLIENT_ID="your-client-id"
-export TUM_CLIENT_SECRET="your-client-secret"  # If using confidential client
-```
-
 ## User Information
 The library extracts user information into a structured format:
 
@@ -168,6 +160,19 @@ if err != nil {
 See the [`examples/`](examples/) directory for complete working examples:
 - [`examples/http/`](examples/http/) - Standard HTTP server
 - [`examples/gin/`](examples/gin/) - Gin framework integration
+
+Set environment variables for client ID and secret:
+```bash
+export TUM_CLIENT_ID="your-client-id"
+export TUM_CLIENT_SECRET="your-client-secret"  # If using confidential client
+```
+
+Run the examples:
+```bash
+go run examples/http/main.go
+# or
+go run examples/gin/main.go
+```
 
 ## Testing
 Run the test suite:
