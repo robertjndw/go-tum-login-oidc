@@ -22,10 +22,11 @@ func NewHTTPHandler(oidcClient *TUMOIDC) *HTTPHandler {
 
 func (h *HTTPHandler) RegisterDefaultRoutes(mux *http.ServeMux) {
 	mux.Handle("/login", h.Login())
-	mux.Handle("/callback", h.HandleCallback(func(ui *UserInfo) error {
+	mux.Handle("/callback", h.HandleCallback(func(w http.ResponseWriter, r *http.Request, ui *UserInfo) {
 		// Default behavior: just log the user info
 		fmt.Printf("User %s authenticated successfully\n", ui.Sub)
-		return nil
+
+		http.Redirect(w, r, "/", http.StatusFound)
 	}))
 	mux.Handle("/logout", h.Logout())
 }
@@ -61,7 +62,7 @@ func (h *HTTPHandler) Login() http.Handler {
 	})
 }
 
-func (h *HTTPHandler) HandleCallback(fn func(*UserInfo) error) http.Handler {
+func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request, *UserInfo)) http.Handler {
 	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -138,11 +139,7 @@ func (h *HTTPHandler) HandleCallback(fn func(*UserInfo) error) http.Handler {
 		}
 
 		// Call authentication callback if set
-		err = fn(userInfo)
-		if err != nil {
-			handleError(w, r, fmt.Errorf("authentication callback failed: %w", err))
-			return
-		}
+		fn(w, r, userInfo)
 	})
 }
 

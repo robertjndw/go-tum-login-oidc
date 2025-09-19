@@ -27,10 +27,12 @@ func main() {
 	http.Handle("/login", handler.Login())
 	// http.Handle("/callback", handler.HandleCallback())
 	// More advanced with user information processing
-	http.Handle("/callback", handler.HandleCallback(func(user *tumoidc.UserInfo) error {
+	http.Handle("/callback", handler.HandleCallback(func(w http.ResponseWriter, r *http.Request, user *tumoidc.UserInfo) {
 		// Do something with the user information
 		fmt.Println("User authenticated:", user)
-		return nil
+
+		// Redirect to home page after successful login
+		http.Redirect(w, r, "/", http.StatusFound)
 	}))
 	http.Handle("/logout", handler.Logout())
 

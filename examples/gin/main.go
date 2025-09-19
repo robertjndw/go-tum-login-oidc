@@ -28,10 +28,12 @@ func main() {
 
 	r := gin.Default()
 	r.GET("/login", gin.WrapH(handler.Login()))
-	r.GET("/callback", gin.WrapH(handler.HandleCallback(func(user *tumoidc.UserInfo) error {
+	r.GET("/callback", gin.WrapH(handler.HandleCallback(func(w http.ResponseWriter, r *http.Request, user *tumoidc.UserInfo) {
 		// Do something with the user information
 		fmt.Println("User authenticated:", user)
-		return nil
+
+		// Redirect to home page after successful login
+		http.Redirect(w, r, "/", http.StatusFound)
 	})))
 	r.GET("/logout", gin.WrapH(handler.Logout()))
 
