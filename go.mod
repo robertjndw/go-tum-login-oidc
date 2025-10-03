@@ -2,8 +2,6 @@ module github.com/robertjndw/go-tum-login-oidc
 
 go 1.23.0
 
-toolchain go1.24.0
-
 require (
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/coreos/go-oidc/v3 v3.15.0
