@@ -20,7 +20,11 @@ type TUMOIDC struct {
 	oauth2   *oauth2.Config
 }
 
-func New(ctx context.Context, opts Options) (*TUMOIDC, error) {
+func New(ctx context.Context, clientID string, options ...Option) (*TUMOIDC, error) {
+	opts := newOptions(clientID)
+	for _, o := range options {
+		o(opts)
+	}
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
@@ -29,9 +33,6 @@ func New(ctx context.Context, opts Options) (*TUMOIDC, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	total_scopes := []string{oidc.ScopeOpenID}
-	total_scopes = append(total_scopes, opts.Scopes...)
 
 	// Configure an OpenID Connect aware OAuth2 client.
 	oauth2Config := oauth2.Config{
@@ -43,7 +44,7 @@ func New(ctx context.Context, opts Options) (*TUMOIDC, error) {
 		Endpoint: provider.Endpoint(),
 
 		// "openid" is a required scope for OpenID Connect flows.
-		Scopes: total_scopes,
+		Scopes: opts.Scopes,
 	}
 
 	return &TUMOIDC{
