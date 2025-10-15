@@ -13,10 +13,19 @@ type HTTPHandler struct {
 }
 
 // NewHTTPHandler creates a new HTTPHandler with the given session store
+// NewHTTPHandler creates a new HTTPHandler with the given session store
 func NewHTTPHandler(oidcClient *TUMOIDC) *HTTPHandler {
+	return NewHTTPHandlerWithSessionName(oidcClient, "tum_oidc_session")
+}
+
+// NewHTTPHandlerWithSessionName creates a new HTTPHandler with a custom session name
+func NewHTTPHandlerWithSessionName(oidcClient *TUMOIDC, sessionName string) *HTTPHandler {
+	sessionManager := scs.New()
+	sessionManager.Cookie.Name = sessionName
+
 	return &HTTPHandler{
 		OIDCClient:     oidcClient,
-		SessionManager: scs.New(),
+		SessionManager: sessionManager,
 	}
 }
 
