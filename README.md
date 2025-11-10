@@ -32,11 +32,11 @@ import (
 
 func main() {
     // Initialize OIDC client
-    oidcClient, err := tumoidc.New(context.Background(), tumoidc.Options{
-        ClientID:    os.Getenv("TUM_CLIENT_ID"),
-        RedirectURL: "http://localhost:8080/callback",
-        Scopes:      []string{"profile", "email"},
-    })
+    oidcClient, err := tumoidc.New(context.Background(),
+        os.Getenv("TUM_CLIENT_ID"),
+        tumoidc.WithRedirectURL("http://localhost:8080/callback"),
+        tumoidc.WithScopes("profile", "email"),
+    )
     if err != nil {
         log.Fatal("Failed to create OIDC client:", err)
     }
@@ -45,9 +45,9 @@ func main() {
     handler := tumoidc.NewHTTPHandler(oidcClient)
     
     http.Handle("/login", handler.Login())
-    http.Handle("/callback", handler.HandleCallback(func(user *tumoidc.UserInfo) error {
+    http.Handle("/callback", handler.HandleCallback(func(w http.ResponseWriter, r *http.Request, user *tumoidc.UserInfo) {
         log.Printf("User authenticated: %s (%s)", user.Name, user.UserName)
-        return nil
+        http.Redirect(w, r, "/", http.StatusFound)
     }))
     http.Handle("/logout", handler.Logout())
 
@@ -71,11 +71,11 @@ import (
 )
 
 func main() {
-    oidcClient, err := tumoidc.New(context.Background(), tumoidc.Options{
-        ClientID:    os.Getenv("TUM_CLIENT_ID"),
-        RedirectURL: "http://localhost:8080/callback",
-        Scopes:      []string{"profile", "email"},
-    })
+    oidcClient, err := tumoidc.New(context.Background(),
+        os.Getenv("TUM_CLIENT_ID"),
+        tumoidc.WithRedirectURL("http://localhost:8080/callback"),
+        tumoidc.WithScopes("profile", "email"),
+    )
     if err != nil {
         log.Fatal("Failed to create OIDC client:", err)
     }
@@ -84,9 +84,10 @@ func main() {
     r := gin.Default()
     
     r.GET("/login", gin.WrapH(handler.Login()))
-    r.GET("/callback", gin.WrapH(handler.HandleCallback(func(user *tumoidc.UserInfo) error {
+    r.GET("/callback", gin.WrapH(handler.HandleCallback(func(w http.ResponseWriter, r *http.Request, user *tumoidc.UserInfo) {
         // Process authenticated user
-        return nil
+        log.Printf("User authenticated: %s", user.Name)
+        http.Redirect(w, r, "/", http.StatusFound)
     })))
     r.GET("/logout", gin.WrapH(handler.Logout()))
 
@@ -97,14 +98,19 @@ func main() {
 ## Configuration
 
 ### Options
+The library uses functional options for configuration:
+
 ```go
-type Options struct {
-    ClientID     string   // Required: Your TUM OIDC client ID
-    ClientSecret string   // Optional: Client secret (for confidential clients)
-    RedirectURL  string   // Required: Callback URL after authentication
-    Scopes       []string // Optional: Additional scopes (defaults to ["openid"])
-    Issuer       string   // Optional: Custom issuer URL (defaults to TUM's issuer)
-}
+// Required: Create client with client ID
+oidcClient, err := tumoidc.New(ctx, "your-client-id")
+
+// With optional configuration
+oidcClient, err := tumoidc.New(ctx, "your-client-id",
+    tumoidc.WithClientSecret("your-secret"),    // Optional: For confidential clients
+    tumoidc.WithRedirectURL("http://..."),       // Required: Callback URL
+    tumoidc.WithScopes("profile", "email"),      // Optional: Additional scopes (openid is default)
+    tumoidc.WithIssuer("https://..."),           // Optional: Custom issuer (defaults to TUM's issuer)
+)
 ```
 
 ## User Information
