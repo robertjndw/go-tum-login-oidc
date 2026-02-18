@@ -2,6 +2,7 @@ package tumoidc
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
@@ -114,7 +115,7 @@ func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request,
 		}
 
 		// Exchange code for token using PKCE
-		token, err := h.OIDCClient.ExchangeCode(ctx, code, codeVerifier, nonceStr)
+		token, err := h.OIDCClient.ExchangeCode(ctx, code, codeVerifier)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to exchange code for token: %w", err))
 			return
@@ -128,20 +129,20 @@ func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request,
 		}
 
 		// Verify ID token
-		_, err = h.OIDCClient.VerifyIDToken(ctx, rawIDToken)
+		_, err = h.OIDCClient.VerifyIDToken(ctx, rawIDToken, nonceStr)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to verify ID token: %w", err))
 			return
 		}
 
 		// Extract user information
-		oidc_userInfo, err := h.OIDCClient.UserInfo(ctx, token)
+		oidcUserInfo, err := h.OIDCClient.UserInfo(ctx, token)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
 			return
 		}
 
-		userInfo, err := ExtractUserInfo(oidc_userInfo)
+		userInfo, err := ExtractUserInfo(oidcUserInfo)
 		if err != nil {
 			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
 			return
@@ -154,10 +155,15 @@ func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request,
 
 func (h *HTTPHandler) Logout() http.Handler {
 	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
-		h.SessionManager.Destroy(r.Context())
+		if err := h.SessionManager.Destroy(r.Context()); err != nil {
+			handleError(w, r, fmt.Errorf("failed to destroy session: %w", err))
+			return
+		}
+		http.Redirect(w, r, "/", http.StatusFound)
 	})
 }
 
 func handleError(w http.ResponseWriter, r *http.Request, err error) {
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	log.Printf("ERROR [%s %s]: %v", r.Method, r.URL.Path, err)
+	http.Error(w, "An authentication error occurred", http.StatusInternalServerError)
 }

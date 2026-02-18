@@ -28,8 +28,8 @@ func WithScopes(scopes ...string) Option {
 
 func WithIssuer(issuer string) Option {
 	return func(o *options) {
-		if issuer == "" {
-			o.Issuer = tumLiveLogin
+		if issuer != "" {
+			o.Issuer = issuer
 		}
 	}
 }
@@ -57,6 +57,13 @@ func (o *options) validate() error {
 	if o.RedirectURL == "" {
 		return errors.New("redirect URL is required")
 	}
-
+	// Add explicit issuer fallback as a safety net
+	if o.Issuer == "" {
+		o.Issuer = tumLiveLogin
+	}
+	// Add scope fallback
+	if len(o.Scopes) == 0 {
+		o.Scopes = []string{oidc.ScopeOpenID}
+	}
 	return nil
 }

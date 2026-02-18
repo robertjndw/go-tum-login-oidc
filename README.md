@@ -143,7 +143,13 @@ if err != nil {
 authURL := oidcClient.AuthCodeURL(pkce.State, pkce.CodeChallenge, nonce)
 
 // Later, exchange code for token
-token, err := oidcClient.ExchangeCode(ctx, code, pkce.CodeVerifier, nonce)
+token, err := oidcClient.ExchangeCode(ctx, code, pkce.CodeVerifier)
+if err != nil {
+    // handle error
+}
+
+// Verify ID token
+idToken, err := oidcClient.VerifyIDToken(ctx, token.Extra("id_token").(string), nonce)
 if err != nil {
     // handle error
 }

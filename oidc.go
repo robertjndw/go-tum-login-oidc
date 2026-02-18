@@ -63,8 +63,8 @@ func (t *TUMOIDC) AuthCodeURL(state, codeChallenge, nonce string) string {
 }
 
 // ExchangeCode exchanges the authorization code for tokens using PKCE
-func (t *TUMOIDC) ExchangeCode(ctx context.Context, code, codeVerifier, nonce string) (*oauth2.Token, error) {
-	token, err := t.oauth2.Exchange(ctx, code, oauth2.VerifierOption(codeVerifier), oidc.Nonce(nonce))
+func (t *TUMOIDC) ExchangeCode(ctx context.Context, code, codeVerifier string) (*oauth2.Token, error) {
+	token, err := t.oauth2.Exchange(ctx, code, oauth2.VerifierOption(codeVerifier))
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}
@@ -72,10 +72,13 @@ func (t *TUMOIDC) ExchangeCode(ctx context.Context, code, codeVerifier, nonce st
 }
 
 // VerifyIDToken verifies and parses the ID token
-func (t *TUMOIDC) VerifyIDToken(ctx context.Context, rawIDToken string) (*oidc.IDToken, error) {
+func (t *TUMOIDC) VerifyIDToken(ctx context.Context, rawIDToken, nonce string) (*oidc.IDToken, error) {
 	idToken, err := t.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify ID token: %w", err)
+	}
+	if idToken.Nonce != nonce {
+		return nil, fmt.Errorf("nonce mismatch")
 	}
 	return idToken, nil
 }

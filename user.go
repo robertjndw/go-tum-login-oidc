@@ -22,6 +22,9 @@ func init() {
 }
 
 func ExtractUserInfo(oidcUserInfo *oidc.UserInfo) (*UserInfo, error) {
+	if oidcUserInfo == nil {
+		return nil, fmt.Errorf("oidcUserInfo is nil")
+	}
 	var userInfo UserInfo
 	if err := oidcUserInfo.Claims(&userInfo); err != nil {
 		return nil, fmt.Errorf("failed to extract userinfo claims: %w", err)
