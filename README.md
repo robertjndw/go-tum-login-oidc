@@ -194,7 +194,7 @@ go test ./...
 ```
 
 ## Requirements
-- Go 1.23+
+- Go 1.24+
 - [TUM-Login OIDC client registration](https://collab.dvb.bayern/spaces/TUMdocs/pages/645763130/Zugang+erhalten+SSO)
 
 ## License
