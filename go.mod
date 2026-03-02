@@ -1,6 +1,6 @@
 module github.com/robertjndw/go-tum-login-oidc
 
-go 1.24.0
+go 1.25
 
 require (
 	github.com/alexedwards/scs/v2 v2.9.0
