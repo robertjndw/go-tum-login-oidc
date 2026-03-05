@@ -1,0 +1,16 @@
+name: Go Vulnerability Check
+
+on: 
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - id: govulncheck
+        uses: golang/govulncheck-action@v1
