@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/alexedwards/scs/v2"
 )
@@ -23,6 +24,8 @@ func NewHTTPHandler(oidcClient *TUMOIDC) *HTTPHandler {
 func NewHTTPHandlerWithSessionName(oidcClient *TUMOIDC, sessionName string) *HTTPHandler {
 	sessionManager := scs.New()
 	sessionManager.Cookie.Name = sessionName
+	sessionManager.Cookie.Secure = true
+	sessionManager.Cookie.SameSite = http.SameSiteStrictMode
 
 	return &HTTPHandler{
 		OIDCClient:     oidcClient,
@@ -52,7 +55,7 @@ func (h *HTTPHandler) Login() http.Handler {
 		// Generate PKCE parameters
 		pkce, err := h.OIDCClient.GeneratePKCE()
 		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to generate PKCE: %w", err))
+			handleError(w, r, fmt.Errorf("failed to generate PKCE: %w", err), http.StatusInternalServerError)
 			return
 		}
 
@@ -62,7 +65,7 @@ func (h *HTTPHandler) Login() http.Handler {
 
 		nonce, err := generateRandomString(32)
 		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to generate nonce: %w", err))
+			handleError(w, r, fmt.Errorf("failed to generate nonce: %w", err), http.StatusInternalServerError)
 			return
 		}
 		h.SessionManager.Put(ctx, "nonce", nonce)
@@ -79,8 +82,8 @@ func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request,
 		// Check for error in callback
 		if errMsg := r.URL.Query().Get("error"); errMsg != "" {
 			errDesc := r.URL.Query().Get("error_description")
-			err := fmt.Errorf("OIDC error: %s - %s", errMsg, errDesc)
-			handleError(w, r, err)
+			err := fmt.Errorf("OIDC error: %s - %s", sanitizeParam(errMsg), sanitizeParam(errDesc))
+			handleError(w, r, err, http.StatusBadRequest)
 			return
 		}
 
@@ -89,62 +92,62 @@ func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request,
 		state := r.URL.Query().Get("state")
 
 		if code == "" {
-			handleError(w, r, fmt.Errorf("missing authorization code"))
+			handleError(w, r, fmt.Errorf("missing authorization code"), http.StatusBadRequest)
 			return
 		}
 
 		// Verify state
 		storedState := h.SessionManager.PopString(ctx, "state")
 		if storedState == "" || storedState != state {
-			handleError(w, r, fmt.Errorf("invalid state parameter"))
+			handleError(w, r, fmt.Errorf("invalid state parameter"), http.StatusBadRequest)
 			return
 		}
 
 		// Get code verifier
 		codeVerifier := h.SessionManager.PopString(ctx, "code_verifier")
 		if codeVerifier == "" {
-			handleError(w, r, fmt.Errorf("invalid code verifier in session"))
+			handleError(w, r, fmt.Errorf("invalid code verifier in session"), http.StatusBadRequest)
 			return
 		}
 
 		// Get Nonce
 		nonceStr := h.SessionManager.PopString(ctx, "nonce")
 		if nonceStr == "" {
-			handleError(w, r, fmt.Errorf("invalid nonce in session"))
+			handleError(w, r, fmt.Errorf("invalid nonce in session"), http.StatusBadRequest)
 			return
 		}
 
 		// Exchange code for token using PKCE
 		token, err := h.OIDCClient.ExchangeCode(ctx, code, codeVerifier)
 		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to exchange code for token: %w", err))
+			handleError(w, r, fmt.Errorf("failed to exchange code for token: %w", err), http.StatusBadGateway)
 			return
 		}
 
 		// Extract ID token
 		rawIDToken, ok := token.Extra("id_token").(string)
 		if !ok {
-			handleError(w, r, fmt.Errorf("no ID token received"))
+			handleError(w, r, fmt.Errorf("no ID token received"), http.StatusBadGateway)
 			return
 		}
 
 		// Verify ID token
 		_, err = h.OIDCClient.VerifyIDToken(ctx, rawIDToken, nonceStr)
 		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to verify ID token: %w", err))
+			handleError(w, r, fmt.Errorf("failed to verify ID token: %w", err), http.StatusBadRequest)
 			return
 		}
 
 		// Extract user information
 		oidcUserInfo, err := h.OIDCClient.UserInfo(ctx, token)
 		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
+			handleError(w, r, fmt.Errorf("failed to get userinfo: %w", err), http.StatusBadGateway)
 			return
 		}
 
 		userInfo, err := ExtractUserInfo(oidcUserInfo)
 		if err != nil {
-			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err))
+			handleError(w, r, fmt.Errorf("failed to extract user information: %w", err), http.StatusInternalServerError)
 			return
 		}
 
@@ -156,14 +159,24 @@ func (h *HTTPHandler) HandleCallback(fn func(http.ResponseWriter, *http.Request,
 func (h *HTTPHandler) Logout() http.Handler {
 	return h.loadAndSaveSession(func(w http.ResponseWriter, r *http.Request) {
 		if err := h.SessionManager.Destroy(r.Context()); err != nil {
-			handleError(w, r, fmt.Errorf("failed to destroy session: %w", err))
+			handleError(w, r, fmt.Errorf("failed to destroy session: %w", err), http.StatusInternalServerError)
 			return
 		}
 		http.Redirect(w, r, "/", http.StatusFound)
 	})
 }
 
-func handleError(w http.ResponseWriter, r *http.Request, err error) {
+func handleError(w http.ResponseWriter, r *http.Request, err error, status int) {
 	log.Printf("ERROR [%s %s]: %v", r.Method, r.URL.Path, err)
-	http.Error(w, "An authentication error occurred", http.StatusInternalServerError)
+	http.Error(w, "An authentication error occurred", status)
+}
+
+// sanitizeParam removes control characters from a string to prevent log injection.
+func sanitizeParam(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 }

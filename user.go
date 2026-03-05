@@ -29,5 +29,8 @@ func ExtractUserInfo(oidcUserInfo *oidc.UserInfo) (*UserInfo, error) {
 	if err := oidcUserInfo.Claims(&userInfo); err != nil {
 		return nil, fmt.Errorf("failed to extract userinfo claims: %w", err)
 	}
+	if userInfo.Sub == "" {
+		return nil, fmt.Errorf("missing required 'sub' claim")
+	}
 	return &userInfo, nil
 }
