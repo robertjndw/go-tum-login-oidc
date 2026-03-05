@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	tumoidc "github.com/robertjndw/go-tum-login-oidc"
@@ -36,6 +37,13 @@ func main() {
 	})))
 	r.GET("/logout", gin.WrapH(handler.Logout()))
 
+	srv := &http.Server{
+		Addr:         ":8080",
+		Handler:      r,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 	log.Println("Server starting on :8080")
-	log.Fatal(http.ListenAndServe(":8080", r))
+	log.Fatal(srv.ListenAndServe())
 }

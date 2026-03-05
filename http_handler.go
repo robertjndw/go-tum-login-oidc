@@ -167,7 +167,8 @@ func (h *HTTPHandler) Logout() http.Handler {
 }
 
 func handleError(w http.ResponseWriter, r *http.Request, err error, status int) {
-	log.Printf("ERROR [%s %s]: %v", r.Method, r.URL.Path, err)
+	// #nosec G706 -- err.Error() is passed through sanitizeParam which strips all control characters before logging
+	log.Printf("ERROR [%s %s]: %s", r.Method, r.URL.Path, sanitizeParam(err.Error()))
 	http.Error(w, "An authentication error occurred", status)
 }
 
